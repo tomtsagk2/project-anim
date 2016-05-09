@@ -1,0 +1,5 @@
+bin/*
+test/*
+*.o
+*.swp
+rendered/*
