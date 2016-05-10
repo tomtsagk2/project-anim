@@ -14,11 +14,13 @@ CFLAGS = -Wall -Wextra -pedantic
 
 ### Rules ###
 ${OUT}: ${OBJ}
+	-mkdir bin/
 	$(CC) $(CFLAGS) -o $@ $(OBJ)
 
 clean:
 	@echo Cleaning ...
 	-rm -f ${OUT} ${OBJ}
+	-rm -r bin/
 
 .PHONY : clean
 

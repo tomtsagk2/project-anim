@@ -52,7 +52,7 @@ int exec(const char* c, char *const args[]);
 char verbose = 0;
 
 int main (int argc, char *argv[]) {
-	
+
 	//Not enough arguments
 	/*
 	if (argc < 2) {
@@ -249,6 +249,29 @@ int main (int argc, char *argv[]) {
 			else {
 				dr_add(&primitives, prim);
 			}
+		} else
+		if ( strcmp(buffer, "custom") == 0 ) {
+			//Read word
+			int res =
+					fscanf(f, "%*[ \t]%[^ \t\n]", buffer);
+
+			//Keep reading until \n, word by word
+			while ( res != EOF
+			&& res != 0
+			&& (strcmp(buffer, "end") != 0) ) {
+				//Check if word has quotes (single/double)
+				if (buffer[0] == '"' || buffer[0] == '\'') {
+					char temp[256];
+					fscanf(f, "%[^\"]%*1c", temp);
+					strcat(buffer, temp);
+				}
+				printf("Argument: %s\n", buffer);
+				res =
+					fscanf(f, "%*[ \t]%[^ \t\n]", buffer);
+
+			}
+			//Ignore the rest
+			fscanf(f, "%*[^end]%*3c");
 		}
 		else {
 			printf("Ignored: %s\n", buffer);
@@ -257,6 +280,9 @@ int main (int argc, char *argv[]) {
 
 	//Close file
 	fclose(f);
+
+	//printf("premature termination for debugging\n");
+	//return 0;
 
 	//Start drawing data
 	char size[100];
