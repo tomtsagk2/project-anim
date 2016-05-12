@@ -7,6 +7,8 @@
 #include "asarray.h"
 #include "dy_array.h"
 
+//I don't like these keys, probably I will change it
+
 /* Template keys
  * Shows what data are included inside the animation's "template".
  * Template data, are data that are assigned once (from a header) and
@@ -42,47 +44,155 @@ char *primitive_keys[] = {
 	(char*) 0,
 };
 
-//Functions
-int exec(const char* c, char *const args[]);
+/* Custom drawing
+ * Describes a command that will execute for some frames.
+ * The command should ideally affect the resulting frame by
+ * drawing on it, appending images on it, or distorting it in
+ * some other way.
+ */
+char *custom_keys[] = {
+	"custom",
+	"from",
+	"to",
+	(char*) 0,
+};
+
+//Variables
+
+//Structs and arrays
+struct AsArray template;
+struct AsArray tools;
+struct dy_array primitives;
+
+/* Custom sentence with arguments
+ * contains dynamic arrays with letters.
+ * each dynamic array is one word (argument)
+ */
+struct dy_array2 cus_sen;
+
+/* Runtime variables
+ * These values are used for runtime things, like how many
+ * frames to draw, which file to parse etc etc
+ * render_from can be from 0 to duration-1
+ * render_to can be from render_from to duration-1
+ * if render_to is -1, it will change to duration-1 and
+ * draw the whole animation.
+ */
+char *input_file;
+int render_from;
+int render_to;
 
 /* Global Settings
  * Used for settings that change each time the program runs. For example
  * showing output with -verbose`
  */
-char verbose = 0;
+char verbose;
+
+//Functions
+int exec(const char* c, char *const argv[]);
+void init_defaults();
+void parse_args(int argc, char *argv[]);
+int parse_file();
+void render_frames();
+void render_output();
+void clean();
 
 int main (int argc, char *argv[]) {
 
-	//Not enough arguments
-	/*
-	if (argc < 2) {
-		printf("not enough arguments\n");
-		printf("usage: program -i input_file\n");
+	/* Organized steps */
+
+	//Init variables to default
+	init_defaults();
+
+	//Parse arguments (argv)
+	parse_args(argc, argv);
+
+	//Parse input file
+	if (parse_file() < 0) {
+		printf("terminating due to fatal error\n");
 		return -1;
 	}
-	*/
 
+	//Render frames
+	render_frames();
+
+	//Combine frames to animation
+	render_output();
+
+	//Clean allocated data
+	clean();
+
+	//Finish OK
+	if (verbose != 's') {
+		printf("done\n");
+	}
+	return 0;
+}
+
+
+/* Forks child and waits for it to execute a
+ * program with arguments. Then returns its
+ * return status.
+ */
+int exec(const char* c, char *const argv[]) {
+	//New process id
+	pid_t pID = fork();
+
+	//Handle fork error
+	if (pID < 0) {
+		printf("Fork error!\n");
+		return -1;
+	} else
+	//Child's execution
+	if (pID == 0) {
+
+		//Print command before executing it
+		if (verbose == 'v') {
+			int i = 0;
+			while (argv[i] != (char*) 0) {
+				printf("%s ", argv[i]);
+				i++;
+			}
+			printf("\n");
+		}
+
+		//Execute program with args
+		if (execvp(c, argv) == -1) {
+			printf("child error on exec: %s\n", c);
+			exit(-1);
+		}
+
+		//Code shouldn't reach this, but just to be sure
+		exit(0);
+	}
+
+	//Parent waits for child and returns
+	int returner;
+	wait(&returner);
+	return returner;
+}
+
+void init_defaults() {
 	//Template
-	struct AsArray template;
 	init_ar(&template, template_keys);
-
-	//Default template
 	ar_set(&template, "width" , "10");
 	ar_set(&template, "height", "10");
 	ar_set(&template, "duration", "10");
-	ar_set(&template, "output", "final3.gif");
+	ar_set(&template, "output", "final.gif");
 
 	//Tools
-	struct AsArray tools;
 	init_ar(&tools, tool_keys);
-
-	//Default tools
 	ar_set(&tools, "fill", "#cc99ff");
 	ar_set(&tools, "background", "#222222");
 
 	//Primitives
-	struct dy_array primitives;
 	dr_init(&primitives);
+
+	/* Custom sentence with arguments
+	 * contains dynamic arrays with letters.
+	 * each dynamic array is one word (argument)
+	 */
+	dr_init2(&cus_sen, sizeof(struct dy_array2));
 
 	/* Runtime variables
 	 * These values are used for runtime things, like how many
@@ -92,10 +202,14 @@ int main (int argc, char *argv[]) {
 	 * if render_to is -1, it will change to duration-1 and
 	 * draw the whole animation.
 	 */
-	char *input_file = 0;
-	int render_from = 0;
-	int render_to   = -1;
+	input_file = 0;
+	render_from = 0;
+	render_to   = -1;
 
+	verbose = 'n';
+}
+
+void parse_args(int argc, char*argv[]) {
 	//Check arguments
 	for (int i = 0; i < argc; i++) {
 		if ( strcmp(argv[i], "-i") == 0 ) {
@@ -111,10 +225,15 @@ int main (int argc, char *argv[]) {
 			i++;
 		} else
 		if ( strcmp(argv[i], "--verbose") == 0) {
-			verbose = 'y';
+			verbose = 'v';
+		} else
+		if ( strcmp(argv[i], "-s") == 0) {
+			verbose = 's';
 		}
 	}
+}
 
+int parse_file() {
 	//Open file
 	FILE *f;
 	if (input_file)
@@ -200,7 +319,7 @@ int main (int argc, char *argv[]) {
 			ar_set(&tools, key, val);
 		} else
 		//Primitive
-		if ( strcmp(buffer, "primitive") == 0) {
+		if ( strcmp(buffer, primitive_keys[0]) == 0 ) {
 			//Create temp primitive
 			struct AsArray prim;
 			init_ar(&prim, primitive_keys);
@@ -250,28 +369,116 @@ int main (int argc, char *argv[]) {
 				dr_add(&primitives, prim);
 			}
 		} else
-		if ( strcmp(buffer, "custom") == 0 ) {
+		//Custom elements
+		if ( strcmp(buffer, custom_keys[0]) == 0) {
 			//Read word
-			int res =
-					fscanf(f, "%*[ \t]%[^ \t\n]", buffer);
+			int res = fscanf(f, "%*[ \t]%[^ \t\n]", buffer);
 
-			//Keep reading until \n, word by word
-			while ( res != EOF
+			//While words exist
+			while (res != EOF
 			&& res != 0
-			&& (strcmp(buffer, "end") != 0) ) {
-				//Check if word has quotes (single/double)
+			&& strcmp(buffer, "end") != 0) {
+				//Check if word has quotes
 				if (buffer[0] == '"' || buffer[0] == '\'') {
 					char temp[256];
 					fscanf(f, "%[^\"]%*1c", temp);
 					strcat(buffer, temp);
-				}
-				printf("Argument: %s\n", buffer);
-				res =
-					fscanf(f, "%*[ \t]%[^ \t\n]", buffer);
+					//printf("Argument:%s\n", buffer+1);
 
+					//Create new dynamic array for word(argument)
+					struct dy_array2 cus_word;
+					dr_init2_fixed(&cus_word, sizeof(char), strlen(buffer+1));
+
+					//Apply word from buffer to dynamic array
+					dr_add2_size(&cus_word, buffer+1, strlen(buffer+1));
+
+					//Add word to sentence
+					dr_add2(&cus_sen, &cus_word);
+
+					//DEBUG - print word using sentence
+					/*
+					printf("Argument: %s\n", 
+						(char*) ((struct dy_array2*) cus_sen.ar)
+							[cus_sen.elements-1].ar);
+					*/
+				}
+				//Word has no quotes, apply to dynamic array
+				else {
+					//Create new dynamic array for word(argument)
+					struct dy_array2 cus_word;
+					dr_init2_fixed(&cus_word, sizeof(char), strlen(buffer));
+
+					//Apply word from buffer to dynamic array
+					dr_add2_size(&cus_word, buffer, strlen(buffer));
+
+					//Add word to sentence
+					dr_add2(&cus_sen, &cus_word);
+
+					//DEBUG - print word using sentence
+					/*
+					printf("Argument: %s\n", 
+						(char*) ((struct dy_array2*) cus_sen.ar)
+							[cus_sen.elements-1].ar);
+					*/
+				}
+
+				//Next word (stop at new line)
+				res = fscanf(f, "%*[ \t]%[^ \t\n]", buffer);
 			}
-			//Ignore the rest
+
+			//Ignore rest for now
 			fscanf(f, "%*[^end]%*3c");
+
+			/*
+			//Create temp custom
+			struct AsArray cust;
+			init_ar(&cust, custom_keys);
+
+			//Get key
+			char* key = malloc( sizeof(char) *strlen(buffer));
+			strcpy(key, buffer);
+
+			//Get value
+			fscanf(f, "%*[ \t\n]%[^\n]%*1c", buffer);
+			char* val = malloc( sizeof(char) *strlen(buffer));
+			strcpy(val, buffer);
+
+			//Apply value to key
+			ar_set(&cust, key, val);
+
+			//Scan custom values
+			while (fscanf(f, "%s", buffer) != EOF 
+			&& strcmp(buffer, "end") != 0) {
+				//Word inside custom's values
+				if (ar_exists(&cust, buffer)) {
+					//Get key
+					char* key = malloc( sizeof(char) *strlen(buffer));
+					strcpy(key, buffer);
+
+					//Get value
+					fscanf(f, "%*[ \t\n]%[^\n]%*1c", buffer);
+					char* val = malloc( sizeof(char) *strlen(buffer));
+					strcpy(val, buffer);
+	
+					//Apply value to key
+					ar_set(&cust, key, val);
+				}
+				//Word not a primitive value
+				else {
+					printf("parsing error: '%s' is not a custom value\n", buffer);
+					return -1;
+				}
+			}
+
+			//Check if custom is inside rendering range
+			if ( ar_get_int(&cust, "from") > render_to
+			||   ar_get_int(&cust, "to"  ) < render_from) {
+				printf("one custom is skipped\n");
+			}
+			else {
+				dr_add(&customs, cust);
+			}
+			*/
 		}
 		else {
 			printf("Ignored: %s\n", buffer);
@@ -281,9 +488,34 @@ int main (int argc, char *argv[]) {
 	//Close file
 	fclose(f);
 
-	//printf("premature termination for debugging\n");
-	//return 0;
+	return 0;
 
+	//Handle parsing error
+	error:
+
+	if (ferror(f)) {
+		fprintf(stderr, "error while parsing: %s: %s\n", input_file,
+			strerror(errno));
+	} else
+	if (feof(f)) {
+		printf("unexpected end of file: %s\n", input_file);
+	}
+	else {
+		printf("parsing error: %s\n", input_file);
+	}
+
+	printf("maybe it has something to do with '%s'?\n", buffer);
+
+	//Close file
+	if (f) {
+		fclose(f);
+	}
+
+	//Return error
+	return -1;
+}
+
+void render_frames() {
 	//Start drawing data
 	char size[100];
 	sprintf(size, "%sx%s", ar_get(&template, "width"), 
@@ -292,7 +524,9 @@ int main (int argc, char *argv[]) {
 		//Create image
 		char out_frame[100];
 		sprintf(out_frame, "rendered/frame_%04d.png", i);
-		printf("Rendering frame: %s\n", out_frame);
+		if (verbose != 's') {
+			printf("Rendering frame: %s\n", out_frame);
+		}
 	
 		//Create empty frame
 		char *bg = malloc( sizeof(char) *(strlen(ar_get(&tools, "background") +3)) );
@@ -317,86 +551,56 @@ int main (int argc, char *argv[]) {
 				exec("convert", args);
 			}
 		}
+
+		//Draw customs in frame
+
+		char **args2 = malloc( sizeof(char*) *cus_sen.elements +1);
+		
+		//For each word in sentence
+		for (unsigned int z = 0; z < cus_sen.elements; z++) {
+			if ( strcmp( ((char*) ((struct dy_array2*)cus_sen.ar)[z].ar),
+			"$frame") == 0 ) {
+				//printf("found a frame!\n");
+				//printf("%s has %d letters\n", out_frame, strlen(out_frame));
+				args2[z] = malloc( sizeof(char) *(strlen(out_frame)+1));
+				args2[z][0] = '\0';
+				strcat(args2[z], out_frame);
+			}
+			else {
+				args2[z] = ((struct dy_array2*) cus_sen.ar)[z].ar;
+			}
+		}
+
+		//Add null pointer on last argument
+		args2[cus_sen.elements] = (char*) 0;
+
+		if ( exec("convert", args2) != 0 ) {
+			printf("custom error\n");
+			exit(-1);
+		}
+		/*
+		for (unsigned int z = 0; z < customs.elements; z++) {
+			//Check if customs are visible
+			if (i >= ar_get_int(&customs.ar[z], "from") 
+			&&  i <= ar_get_int(&customs.ar[z], "to"  )) {
+				;
+			}
+		}
+		*/
 	}
-	
+}
+
+void render_output() {
 	//Link frames together
-	printf("converting to animation '%s' ...\n", ar_get(&template, "output"));
+	if (verbose != 's') {
+		printf("converting to animation '%s' ...\n", ar_get(&template, "output"));
+	}
 	char *args[] = {"convert", "rendered/*.png", 
 		ar_get(&template, "output"), 
 		(char*) 0};
 	exec("convert", args);
-
-	//Finish OK
-	printf("done\n");
-	return 0;
-
-	//Handle parsing error
-	error:
-
-	if (ferror(f)) {
-		fprintf(stderr, "error while parsing: %s: %s\n", argv[1],
-			strerror(errno));
-	} else
-	if (feof(f)) {
-		printf("unexpected end of file: %s\n", argv[1]);
-	}
-	else {
-		printf("parsing error: %s\n", argv[1]);
-	}
-
-	printf("maybe it has something to do with '%s'?\n", buffer);
-
-	//Close file
-	if (f) {
-		fclose(f);
-	}
-
-	//Return error
-	return -1;
 }
 
+void clean() {
 
-/* Forks child and waits for it to execute a
- * program with arguments. Then returns its
- * return status.
- */
-int exec(const char* c, char *const args[]) {
-	//New process id
-	pid_t pID = fork();
-
-	//Handle fork error
-	if (pID < 0) {
-		printf("Fork error!\n");
-		return -1;
-	} else
-	//Child's execution
-	if (pID == 0) {
-
-		//Print commant before executing it
-		if (verbose) {
-			char buffer[256];
-			buffer[0] = '\0';
-			int i = 0;
-			while (args[i] != (char*) 0) {
-				strcat(buffer, args[i]);
-				strcat(buffer, " ");
-				i++;
-			}
-			printf("%s\n", buffer);
-		}
-
-		//Execute program with args
-		if (execvp(c, args) == -1) {
-			printf("child error on exec: %s\n", c);
-			return -1;
-		}
-
-		//Code shouldn't reach this, but just to be sure
-		return 0;
-	}
-
-	//Parent waits for child and returns
-	int returner;
-	wait(&returner);
-	return returner;
 }
